@@ -1,55 +1,66 @@
 import React, { useState } from 'react';
-import { Container, Typography, TextField, Button, Box, Alert } from '@mui/material';
+import { Container, Paper, TextField, Button, Typography, Alert } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 import api from '../api/axios';
 
 function Register() {
-  const [username, setUsername] = useState('');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [formData, setFormData] = useState({
+    name: '',
+    email: '',
+    password: ''
+  });
   const [error, setError] = useState('');
   const navigate = useNavigate();
+
+  const handleChange = (e) => {
+    setFormData({
+      ...formData,
+      [e.target.name]: e.target.value
+    });
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
-
-    // Validation côté client
-    if (!username || !email || !password) {
-      setError('Tous les champs sont requis');
-      return;
-    }
-
     try {
-      const response = await api.post('/users/register', { username, email, password });
-      console.log('Réponse d\'inscription:', response.data);
-      navigate('/login');
+      const response = await api.post('/user/register', formData);
+      if (response.data.token) {
+        localStorage.setItem('token', response.data.token);
+        navigate('/login');
+      }
     } catch (error) {
-      console.error('Erreur lors de l\'inscription:', error.response?.data || error.message);
-      setError(error.response?.data?.message || 'Une erreur est survenue lors de l\'inscription');
+      console.error('Erreur lors de l\'inscription:', error.response?.data);
+      setError(error.response?.data?.message || 'Erreur lors de l\'inscription');
     }
   };
 
   return (
     <Container maxWidth="xs">
-      <Box sx={{ mt: 8, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-        <Typography component="h1" variant="h5">
+      <Paper elevation={3} sx={{ p: 4, mt: 8 }}>
+        <Typography component="h1" variant="h5" align="center" gutterBottom>
           Inscription
         </Typography>
-        {error && <Alert severity="error" sx={{ mt: 2, width: '100%' }}>{error}</Alert>}
-        <Box component="form" onSubmit={handleSubmit} sx={{ mt: 1 }}>
+        
+        {error && (
+          <Alert severity="error" sx={{ mb: 2 }}>
+            {error}
+          </Alert>
+        )}
+        
+        <form onSubmit={handleSubmit}>
           <TextField
             margin="normal"
             required
             fullWidth
-            id="username"
+            id="name"
             label="Nom d'utilisateur"
-            name="username"
-            autoComplete="username"
+            name="name"
+            autoComplete="name"
             autoFocus
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
+            value={formData.name}
+            onChange={handleChange}
           />
+          
           <TextField
             margin="normal"
             required
@@ -58,9 +69,10 @@ function Register() {
             label="Adresse e-mail"
             name="email"
             autoComplete="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
+            value={formData.email}
+            onChange={handleChange}
           />
+          
           <TextField
             margin="normal"
             required
@@ -70,9 +82,10 @@ function Register() {
             type="password"
             id="password"
             autoComplete="new-password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
+            value={formData.password}
+            onChange={handleChange}
           />
+          
           <Button
             type="submit"
             fullWidth
@@ -81,8 +94,8 @@ function Register() {
           >
             S'inscrire
           </Button>
-        </Box>
-      </Box>
+        </form>
+      </Paper>
     </Container>
   );
 }

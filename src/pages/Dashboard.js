@@ -1,20 +1,42 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Container, Typography, Button, Card, CardContent, CardActions, TextField, Snackbar } from '@mui/material';
+import { Container, Typography, Button, Card, CardContent, CardActions, TextField, Snackbar, Alert, Paper, Box } from '@mui/material';
 import Grid from '@mui/material/Grid';
 import { Link } from 'react-router-dom';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import api from '../api/axios';
 
+// Correction des icônes Leaflet
+import icon from 'leaflet/dist/images/marker-icon.png';
+import iconShadow from 'leaflet/dist/images/marker-shadow.png';
+
+let DefaultIcon = L.icon({
+  iconUrl: icon,
+  shadowUrl: iconShadow,
+  iconSize: [25, 41],
+  iconAnchor: [12, 41]
+});
+
+L.Marker.prototype.options.icon = DefaultIcon;
+
 function Dashboard() {
   const [artworks, setArtworks] = useState([]);
   const [address, setAddress] = useState('');
-  const [position, setPosition] = useState([48.8566, 2.3522]); // Paris par défaut
+  const [savedAddress, setSavedAddress] = useState(null);
+  const [position, setPosition] = useState([48.8566, 2.3522]);
+  const [isLoading, setIsLoading] = useState(true);
   const [snackbarOpen, setSnackbarOpen] = useState(false);
   const [snackbarMessage, setSnackbarMessage] = useState('');
+  const [snackbarSeverity, setSnackbarSeverity] = useState('info');
   const mapRef = useRef(null);
   const mapContainerRef = useRef(null);
   const markerRef = useRef(null);
+
+  const showSnackbar = useCallback((message, severity = 'info') => {
+    setSnackbarMessage(message);
+    setSnackbarSeverity(severity);
+    setSnackbarOpen(true);
+  }, []);
 
   const fetchArtworks = useCallback(async () => {
     try {
@@ -22,116 +44,249 @@ function Dashboard() {
       setArtworks(response.data);
     } catch (error) {
       console.error('Erreur lors de la récupération des œuvres:', error);
-      setSnackbarMessage('Erreur lors de la récupération des œuvres');
-      setSnackbarOpen(true);
+      showSnackbar('Erreur lors de la récupération des œuvres', 'error');
     }
-  }, []);
+  }, [showSnackbar]);
 
+  // Initialisation de la carte avec délai et vérification
   useEffect(() => {
-    fetchArtworks();
-  }, [fetchArtworks]);
+    let isMounted = true;
+    
+    const initMap = () => {
+      if (!mapContainerRef.current || mapRef.current) return;
+      
+      try {
+        mapRef.current = L.map(mapContainerRef.current).setView(position, 13);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          attribution: '© OpenStreetMap contributors'
+        }).addTo(mapRef.current);
+        
+        markerRef.current = L.marker(position).addTo(mapRef.current);
+        
+        // Force le rafraîchissement de la carte
+        setTimeout(() => {
+          if (mapRef.current) {
+            mapRef.current.invalidateSize();
+          }
+        }, 100);
+      } catch (error) {
+        console.error('Erreur initialisation carte:', error);
+        showSnackbar('Erreur lors du chargement de la carte', 'error');
+      }
+    };
 
-  useEffect(() => {
-    if (mapContainerRef.current && !mapRef.current) {
-      mapRef.current = L.map(mapContainerRef.current).setView(position, 13);
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-      }).addTo(mapRef.current);
-      markerRef.current = L.marker(position).addTo(mapRef.current);
-    }
+    // Délai pour s'assurer que le conteneur est monté
+    const timer = setTimeout(() => {
+      if (isMounted) {
+        initMap();
+      }
+    }, 100);
+
     return () => {
+      isMounted = false;
+      clearTimeout(timer);
       if (mapRef.current) {
         mapRef.current.remove();
         mapRef.current = null;
       }
     };
-  }, []);
+  }, [position, showSnackbar]);
 
+  // Mise à jour de la carte quand la position change
   useEffect(() => {
     if (mapRef.current && markerRef.current) {
       mapRef.current.setView(position);
       markerRef.current.setLatLng(position);
+      mapRef.current.invalidateSize();
     }
   }, [position]);
 
-  const searchAddress = async () => {
+  // Chargement initial des données
+  const loadInitialData = useCallback(async () => {
+    setIsLoading(true);
     try {
-      const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}`);
+      const [addressResponse, artworksResponse] = await Promise.all([
+        api.get('/user/address'),
+        api.get('/artworks')
+      ]);
+
+      if (addressResponse.data?.address) {
+        setSavedAddress(addressResponse.data.address);
+        setAddress(addressResponse.data.address);
+        if (addressResponse.data.coordinates) {
+          setPosition([
+            addressResponse.data.coordinates.lat,
+            addressResponse.data.coordinates.lng
+          ]);
+        }
+      } else {
+        setSavedAddress(null);
+      }
+
+      setArtworks(artworksResponse.data);
+    } catch (error) {
+      console.error('Erreur chargement données:', error);
+      showSnackbar('Erreur lors du chargement des données', 'error');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [showSnackbar]);
+
+  useEffect(() => {
+    loadInitialData();
+  }, [loadInitialData]);
+
+  const searchAddress = useCallback(async () => {
+    if (!address.trim()) {
+      showSnackbar('Veuillez entrer une adresse', 'warning');
+      return;
+    }
+
+    try {
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}`
+      );
       const data = await response.json();
+      
       if (data && data.length > 0) {
         const { lat, lon, display_name } = data[0];
         setPosition([parseFloat(lat), parseFloat(lon)]);
         setAddress(display_name);
-        
-        // Optionnel : Récupérer les détails XML
-        const xmlResponse = await fetch(`https://www.openstreetmap.org/api/0.6/node/${data[0].osm_id}`);
-        const xmlText = await xmlResponse.text();
-        console.log('Détails XML:', xmlText);
-        
-        setSnackbarMessage('Adresse trouvée et mise à jour');
-        setSnackbarOpen(true);
+        showSnackbar('Adresse trouvée et mise à jour', 'success');
       } else {
-        setSnackbarMessage('Aucune adresse trouvée');
-        setSnackbarOpen(true);
+        showSnackbar('Aucune adresse trouvée', 'warning');
       }
     } catch (error) {
       console.error('Erreur lors de la recherche d\'adresse:', error);
-      setSnackbarMessage('Erreur lors de la recherche d\'adresse');
-      setSnackbarOpen(true);
+      showSnackbar('Erreur lors de la recherche d\'adresse', 'error');
     }
-  };
+  }, [address, showSnackbar]);
 
-  const handleAddressChange = (e) => {
-    setAddress(e.target.value);
-  };
+  const saveAddress = useCallback(async () => {
+    if (!address.trim()) {
+      showSnackbar('Veuillez entrer une adresse', 'warning');
+      return;
+    }
 
-  const saveAddress = async () => {
     try {
-      await api.post('/user/address', { address });
-      setSnackbarMessage('Adresse enregistrée avec succès');
-      setSnackbarOpen(true);
+      await api.post('/user/address', { 
+        address,
+        coordinates: {
+          lat: position[0],
+          lng: position[1]
+        }
+      });
+      
+      setSavedAddress(address);
+      showSnackbar('Adresse enregistrée avec succès', 'success');
+      await loadInitialData(); // Recharge les données après la sauvegarde
     } catch (error) {
       console.error('Erreur lors de l\'enregistrement de l\'adresse:', error);
-      setSnackbarMessage('Erreur lors de l\'enregistrement de l\'adresse');
-      setSnackbarOpen(true);
+      showSnackbar('Erreur lors de l\'enregistrement de l\'adresse', 'error');
     }
-  };
+  }, [address, position, showSnackbar, loadInitialData]);
 
-  const handleDelete = async (id) => {
+  const handleDelete = useCallback(async (id) => {
     try {
       await api.delete(`/artworks/${id}`);
       fetchArtworks();
+      showSnackbar('Œuvre supprimée avec succès', 'success');
     } catch (error) {
       console.error('Erreur lors de la suppression de l\'œuvre:', error);
-      setSnackbarMessage('Erreur lors de la suppression de l\'œuvre');
-      setSnackbarOpen(true);
+      showSnackbar('Erreur lors de la suppression de l\'œuvre', 'error');
     }
-  };
+  }, [fetchArtworks, showSnackbar]);
+
+  if (isLoading) {
+    return (
+      <Container maxWidth="lg" sx={{ mt: 4 }}>
+        <Typography>Chargement...</Typography>
+      </Container>
+    );
+  }
 
   return (
     <Container maxWidth="lg" sx={{ mt: 4 }}>
       <Typography variant="h4" gutterBottom>
         Tableau de bord
       </Typography>
-      <Button variant="contained" color="primary" component={Link} to="/add-artwork" sx={{ mb: 4 }}>
+      
+      <Button 
+        variant="contained" 
+        color="primary" 
+        component={Link} 
+        to="/add-artwork" 
+        sx={{ mb: 4 }}
+      >
         Ajouter une nouvelle œuvre
       </Button>
+
+      {/* Section adresse avec message par défaut */}
+      <Paper 
+        sx={{ 
+          p: 2, 
+          mb: 3, 
+          bgcolor: 'background.default',
+          border: '1px solid rgba(0, 0, 0, 0.12)',
+          borderRadius: 1
+        }}
+      >
+        <Typography variant="subtitle1" gutterBottom fontWeight="bold">
+          Adresse enregistrée :
+        </Typography>
+        <Typography variant="body1" color={savedAddress ? 'textPrimary' : 'text.secondary'}>
+          {savedAddress || "Aucune adresse configurée"}
+        </Typography>
+      </Paper>
       
       <TextField
         fullWidth
         label="Entrez votre adresse"
         value={address}
-        onChange={handleAddressChange}
+        onChange={(e) => setAddress(e.target.value)}
         margin="normal"
+        helperText="Entrez une adresse pour la localiser sur la carte"
       />
-      <Button variant="contained" onClick={searchAddress} sx={{ mt: 2, mr: 2 }}>
-        Rechercher
-      </Button>
-      <Button variant="contained" color="secondary" onClick={saveAddress} sx={{ mt: 2 }}>
-        Enregistrer l'adresse
-      </Button>
       
-      <div ref={mapContainerRef} style={{ height: '400px', width: '100%', marginTop: '20px', marginBottom: '20px' }}></div>
+      <Box sx={{ mt: 2, mb: 2 }}>
+        <Button 
+          variant="contained" 
+          onClick={searchAddress} 
+          sx={{ mr: 2 }}
+        >
+          Rechercher
+        </Button>
+        
+        <Button 
+          variant="contained" 
+          color="secondary" 
+          onClick={saveAddress}
+        >
+          Enregistrer l'adresse
+        </Button>
+      </Box>
+      
+      {/* Conteneur de carte avec style forcé et z-index */}
+      <Box 
+        sx={{
+          position: 'relative',
+          width: '100%',
+          height: '400px',
+          mb: 4,
+          border: '1px solid rgba(0, 0, 0, 0.12)',
+          borderRadius: 1,
+          overflow: 'hidden',
+          zIndex: 1
+        }}
+      >
+        <div 
+          ref={mapContainerRef}
+          style={{ 
+            width: '100%',
+            height: '100%'
+          }}
+        />
+      </Box>
       
       <Grid container spacing={4}>
         {artworks.map((artwork) => (
@@ -146,20 +301,39 @@ function Dashboard() {
                 </Typography>
               </CardContent>
               <CardActions>
-                <Button size="small" component={Link} to={`/edit-artwork/${artwork._id}`}>Modifier</Button>
-                <Button size="small" color="error" onClick={() => handleDelete(artwork._id)}>Supprimer</Button>
+                <Button 
+                  size="small" 
+                  component={Link} 
+                  to={`/edit-artwork/${artwork._id}`}
+                >
+                  Modifier
+                </Button>
+                <Button 
+                  size="small" 
+                  color="error" 
+                  onClick={() => handleDelete(artwork._id)}
+                >
+                  Supprimer
+                </Button>
               </CardActions>
             </Card>
           </Grid>
         ))}
       </Grid>
       
-      <Snackbar
-        open={snackbarOpen}
-        autoHideDuration={6000}
+      <Snackbar 
+        open={snackbarOpen} 
+        autoHideDuration={6000} 
         onClose={() => setSnackbarOpen(false)}
-        message={snackbarMessage}
-      />
+      >
+        <Alert 
+          onClose={() => setSnackbarOpen(false)} 
+          severity={snackbarSeverity}
+          sx={{ width: '100%' }}
+        >
+          {snackbarMessage}
+        </Alert>
+      </Snackbar>
     </Container>
   );
 }
