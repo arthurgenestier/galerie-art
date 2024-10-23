@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { Container, Paper, TextField, Button, Typography, Alert } from '@mui/material';
-import { useNavigate } from 'react-router-dom';
+import { Container, Paper, TextField, Button, Typography, Alert, Box, Link } from '@mui/material';
+import { useNavigate, Link as RouterLink } from 'react-router-dom';
 import api from '../api/axios';
 
 function Register() {
@@ -36,18 +36,27 @@ function Register() {
 
   return (
     <Container maxWidth="xs">
-      <Paper elevation={3} sx={{ p: 4, mt: 8 }}>
+      <Paper 
+        elevation={3} 
+        sx={{ 
+          p: 4, 
+          mt: 8,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center'
+        }}
+      >
         <Typography component="h1" variant="h5" align="center" gutterBottom>
           Inscription
         </Typography>
         
         {error && (
-          <Alert severity="error" sx={{ mb: 2 }}>
+          <Alert severity="error" sx={{ mb: 2, width: '100%' }}>
             {error}
           </Alert>
         )}
         
-        <form onSubmit={handleSubmit}>
+        <form onSubmit={handleSubmit} style={{ width: '100%' }}>
           <TextField
             margin="normal"
             required
@@ -95,6 +104,32 @@ function Register() {
             S'inscrire
           </Button>
         </form>
+
+        <Box sx={{ 
+          mt: 2,
+          width: '100%',
+          textAlign: 'center',
+          borderTop: '1px solid',
+          borderColor: 'divider',
+          pt: 2
+        }}>
+          <Typography variant="body2" color="text.secondary">
+            Déjà inscrit ?{' '}
+            <Link 
+              component={RouterLink} 
+              to="/login" 
+              sx={{ 
+                fontWeight: 500,
+                textDecoration: 'none',
+                '&:hover': {
+                  textDecoration: 'underline'
+                }
+              }}
+            >
+              Connectez-vous ici
+            </Link>
+          </Typography>
+        </Box>
       </Paper>
     </Container>
   );
