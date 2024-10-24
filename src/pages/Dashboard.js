@@ -1,9 +1,25 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
-  Container, Typography, Button, Card, CardContent, CardActions,
-  TextField, Snackbar, Alert, Paper, Box, Slider, Tabs, Tab,
-  Autocomplete, CircularProgress
+  Container, 
+  Typography, 
+  Button, 
+  Card, 
+  CardContent, 
+  CardActions,
+  TextField, 
+  Snackbar, 
+  Alert, 
+  Paper, 
+  Box, 
+  Slider, 
+  Tabs, 
+  Tab,
+  Autocomplete, 
+  CircularProgress, 
+  CardMedia
 } from '@mui/material';
+import EditIcon from '@mui/icons-material/Edit';
+import DeleteIcon from '@mui/icons-material/Delete';
 import Grid from '@mui/material/Grid';
 import { Link } from 'react-router-dom';
 import debounce from 'lodash/debounce';
@@ -84,26 +100,26 @@ function Dashboard() {
       if (mapRef.current) {
         mapRef.current.remove();
       }
-  
+
       // Créer la carte
       const map = L.map(mapContainerRef.current, {
         center: position,
         zoom: 12,
         zoomControl: true
       });
-  
+
       // Ajouter le fond de carte
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: '© OpenStreetMap contributors'
       }).addTo(map);
-  
+
       mapRef.current = map;
-  
+
       // Attendre que la carte soit chargée avant d'ajouter le marker et le cercle
       map.whenReady(() => {
         // Ajouter le marker
         markerRef.current = L.marker(position).addTo(map);
-        
+
         // Ajouter le cercle
         radiusCircleRef.current = L.circle(position, {
           color: '#2196F3',
@@ -112,18 +128,18 @@ function Dashboard() {
           weight: 2,
           radius: deliveryRadius * 1000
         }).addTo(map);
-  
+
         // Ajuster la vue une fois que tout est ajouté
         const bounds = radiusCircleRef.current.getBounds();
         map.fitBounds(bounds, { padding: [50, 50] });
       });
-  
+
     } catch (error) {
       console.error('Erreur lors de l\'initialisation de la carte:', error);
       showSnackbar('Erreur lors du chargement de la carte', 'error');
     }
   }, [position, deliveryRadius, showSnackbar]);
-  
+
   // Modifier aussi l'effet qui met à jour la position
   useEffect(() => {
     if (mapRef.current && markerRef.current && radiusCircleRef.current) {
@@ -133,9 +149,9 @@ function Dashboard() {
           markerRef.current.setLatLng(position);
           radiusCircleRef.current.setLatLng(position);
           radiusCircleRef.current.setRadius(deliveryRadius * 1000);
-          
+
           const bounds = radiusCircleRef.current.getBounds();
-          mapRef.current.fitBounds(bounds, { 
+          mapRef.current.fitBounds(bounds, {
             padding: [50, 50],
             duration: 0.5
           });
@@ -566,19 +582,103 @@ function Dashboard() {
         <Grid container spacing={4}>
           {artworks.map((artwork) => (
             <Grid item xs={12} sm={6} md={4} key={artwork._id}>
-              <Card>
-                <CardContent>
-                  <Typography variant="h6" component="div">
+              <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+                <CardMedia
+                  component="img"
+                  height="200"
+                  image={artwork.imageUrl || '/placeholder-image.png'}
+                  alt={artwork.title}
+                  sx={{ objectFit: 'cover' }}
+                />
+                <CardContent sx={{ flexGrow: 1 }}>
+                  <Typography variant="h6" component="div" gutterBottom>
                     {artwork.title}
                   </Typography>
-                  <Typography variant="body2" color="text.secondary">
+                  <Typography variant="subtitle1" color="text.secondary" gutterBottom>
                     {artwork.artist}
                   </Typography>
+
+                  <Box sx={{ mt: 2 }}>
+                    <Typography variant="body2" color="text.secondary" paragraph>
+                      {artwork.description}
+                    </Typography>
+                  </Box>
+
+                  <Box sx={{
+                    mt: 2,
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(2, 1fr)',
+                    gap: 2
+                  }}>
+                    <Box>
+                      <Typography variant="body2" color="text.secondary">
+                        Prix
+                      </Typography>
+                      <Typography variant="body1" fontWeight="bold">
+                        {artwork.price.toLocaleString()} €
+                      </Typography>
+                    </Box>
+
+                    {artwork.dimensions && (
+                      <Box>
+                        <Typography variant="body2" color="text.secondary">
+                          Dimensions
+                        </Typography>
+                        <Typography variant="body1">
+                          {artwork.dimensions.width} × {artwork.dimensions.height} cm
+                        </Typography>
+                      </Box>
+                    )}
+
+                    {artwork.medium && (
+                      <Box>
+                        <Typography variant="body2" color="text.secondary">
+                          Technique
+                        </Typography>
+                        <Typography variant="body1">
+                          {artwork.medium}
+                        </Typography>
+                      </Box>
+                    )}
+
+                    {artwork.year && (
+                      <Box>
+                        <Typography variant="body2" color="text.secondary">
+                          Année
+                        </Typography>
+                        <Typography variant="body1">
+                          {artwork.year}
+                        </Typography>
+                      </Box>
+                    )}
+                  </Box>
                 </CardContent>
-                <CardActions>
+
+                <CardActions sx={{
+                  justifyContent: 'flex-end',
+                  gap: 1,
+                  p: 2,
+                  borderTop: '1px solid',
+                  borderColor: 'divider'
+                }}>
+                  <Button
+                    size="small"
+                    component={Link}
+                    to={`/edit-artwork/${artwork._id}`}
+                    startIcon={<EditIcon />}
+                    sx={{
+                      '&:hover': {
+                        backgroundColor: 'primary.main',
+                        color: 'white'
+                      }
+                    }}
+                  >
+                    Modifier
+                  </Button>
                   <Button
                     size="small"
                     color="error"
+                    startIcon={<DeleteIcon />}
                     onClick={() => handleDelete(artwork._id)}
                   >
                     Supprimer
@@ -589,7 +689,6 @@ function Dashboard() {
           ))}
         </Grid>
       </TabPanel>
-
       <Snackbar
         open={snackbarOpen}
         autoHideDuration={6000}

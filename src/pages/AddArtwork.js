@@ -1,98 +1,394 @@
-import React, { useState } from 'react';
-import { Container, Typography, TextField, Button, Box } from '@mui/material';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useCallback } from 'react';
+import {
+  Container, Typography, TextField, Button, Box, Paper,
+  Snackbar, Alert, IconButton, Grid, Card, CardMedia
+} from '@mui/material';
+import { useNavigate, Link } from 'react-router-dom';
+import { ArrowBack, CloudUpload, Delete } from '@mui/icons-material';
 import api from '../api/axios';
 
 function AddArtwork() {
-  const [title, setTitle] = useState('');
-  const [artist, setArtist] = useState('');
-  const [description, setDescription] = useState('');
-  const [imageUrl, setImageUrl] = useState('');
-  const [price, setPrice] = useState('');
+  // États du formulaire
+  const [formData, setFormData] = useState({
+    title: '',
+    artist: '',
+    description: '',
+    imageUrl: '',
+    price: '',
+    width: '', // nouveau
+    height: '', // nouveau
+    medium: '',
+    year: '',
+    style: ''
+  });
+
+  // États pour la gestion des erreurs et le chargement
+  const [errors, setErrors] = useState({});
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [snackbar, setSnackbar] = useState({
+    open: false,
+    message: '',
+    severity: 'info'
+  });
+  const [imagePreview, setImagePreview] = useState(null);
+
   const navigate = useNavigate();
 
+  // Gestion des changements de champs
+  const handleChange = (e) => {
+    const { name, value } = e.target;
+    setFormData(prev => ({
+      ...prev,
+      [name]: value
+    }));
+    // Effacer l'erreur quand l'utilisateur modifie le champ
+    if (errors[name]) {
+      setErrors(prev => ({
+        ...prev,
+        [name]: null
+      }));
+    }
+  };
+
+  // Gestion du upload d'image
+  const handleImageUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      setSnackbar({
+        open: true,
+        message: 'Veuillez sélectionner une image valide',
+        severity: 'error'
+      });
+      return;
+    }
+
+    try {
+      const formData = new FormData();
+      formData.append('image', file);
+
+      console.log('Fichier à uploader:', file);
+
+      setIsSubmitting(true);
+      // Notez qu'on enlève le /api/ car il est déjà dans baseURL
+      const response = await api.post('/upload', formData);
+
+      setFormData(prev => ({
+        ...prev,
+        imageUrl: response.data.url
+      }));
+      setImagePreview(URL.createObjectURL(file));
+
+      setSnackbar({
+        open: true,
+        message: 'Image téléchargée avec succès',
+        severity: 'success'
+      });
+    } catch (error) {
+      console.error('Erreur détaillée:', error.response || error);
+      setSnackbar({
+        open: true,
+        message: error.response?.data?.message || 'Erreur lors du téléchargement de l\'image',
+        severity: 'error'
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // Validation du formulaire
+  const validateForm = () => {
+    const newErrors = {};
+
+    if (!formData.title.trim()) {
+      newErrors.title = 'Le titre est requis';
+    }
+
+    if (!formData.artist.trim()) {
+      newErrors.artist = 'Le nom de l\'artiste est requis';
+    }
+
+    if (!formData.description.trim()) {
+      newErrors.description = 'La description est requise';
+    }
+
+    if (!formData.price || formData.price <= 0) {
+      newErrors.price = 'Veuillez entrer un prix valide';
+    }
+
+    if (!formData.imageUrl) {
+      newErrors.imageUrl = 'Une image est requise';
+    }
+
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
+  // Soumission du formulaire
   const handleSubmit = async (e) => {
     e.preventDefault();
+
+    if (!validateForm()) {
+      setSnackbar({
+        open: true,
+        message: 'Veuillez corriger les erreurs du formulaire',
+        severity: 'error'
+      });
+      return;
+    }
+
+    setIsSubmitting(true);
     try {
-      await api.post('/artworks', { title, artist, description, imageUrl, price: Number(price) });
-      navigate('/dashboard');
+      await api.post('/artworks', {
+        ...formData,
+        price: Number(formData.price),
+        year: Number(formData.year) || null,
+        dimensions: {
+          width: Number(formData.width) || 0,
+          height: Number(formData.height) || 0
+        },
+        // Supprimer les champs individuels de dimensions qui ne sont plus nécessaires
+        width: undefined,
+        height: undefined
+      });
+
+      setSnackbar({
+        open: true,
+        message: 'Œuvre ajoutée avec succès',
+        severity: 'success'
+      });
+
+      // Redirection après un court délai
+      setTimeout(() => {
+        navigate('/dashboard');
+      }, 1500);
     } catch (error) {
       console.error('Erreur lors de l\'ajout de l\'œuvre:', error);
-      // Gérer l'erreur (ex: afficher un message à l'utilisateur)
+      setSnackbar({
+        open: true,
+        message: error.response?.data?.message || 'Erreur lors de l\'ajout de l\'œuvre',
+        severity: 'error'
+      });
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   return (
-    <Container maxWidth="sm">
-      <Box sx={{ mt: 8, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-        <Typography component="h1" variant="h5">
-          Ajouter une nouvelle œuvre
-        </Typography>
-        <Box component="form" onSubmit={handleSubmit} sx={{ mt: 1 }}>
-          <TextField
-            margin="normal"
-            required
-            fullWidth
-            id="title"
-            label="Titre de l'œuvre"
-            name="title"
-            autoFocus
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-          />
-          <TextField
-            margin="normal"
-            required
-            fullWidth
-            id="artist"
-            label="Nom de l'artiste"
-            name="artist"
-            value={artist}
-            onChange={(e) => setArtist(e.target.value)}
-          />
-          <TextField
-            margin="normal"
-            required
-            fullWidth
-            id="description"
-            label="Description"
-            name="description"
-            multiline
-            rows={4}
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-          />
-          <TextField
-            margin="normal"
-            required
-            fullWidth
-            id="imageUrl"
-            label="URL de l'image"
-            name="imageUrl"
-            value={imageUrl}
-            onChange={(e) => setImageUrl(e.target.value)}
-          />
-          <TextField
-            margin="normal"
-            required
-            fullWidth
-            id="price"
-            label="Prix"
-            name="price"
-            type="number"
-            value={price}
-            onChange={(e) => setPrice(e.target.value)}
-          />
-          <Button
-            type="submit"
-            fullWidth
-            variant="contained"
-            sx={{ mt: 3, mb: 2 }}
-          >
-            Ajouter l'œuvre
-          </Button>
-        </Box>
+    <Container maxWidth="md">
+      <Box sx={{ mt: 4, mb: 4 }}>
+        <Button
+          component={Link}
+          to="/dashboard"
+          startIcon={<ArrowBack />}
+          sx={{ mb: 3 }}
+        >
+          Retour au tableau de bord
+        </Button>
+
+        <Paper elevation={3} sx={{ p: 4 }}>
+          <Typography component="h1" variant="h4" gutterBottom align="center">
+            Ajouter une nouvelle œuvre
+          </Typography>
+
+          <Box component="form" onSubmit={handleSubmit} noValidate>
+            <Grid container spacing={3}>
+              {/* Informations principales */}
+              <Grid item xs={12} md={8}>
+                <TextField
+                  required
+                  fullWidth
+                  name="title"
+                  label="Titre de l'œuvre"
+                  value={formData.title}
+                  onChange={handleChange}
+                  error={!!errors.title}
+                  helperText={errors.title}
+                  margin="normal"
+                />
+
+                <TextField
+                  required
+                  fullWidth
+                  name="artist"
+                  label="Nom de l'artiste"
+                  value={formData.artist}
+                  onChange={handleChange}
+                  error={!!errors.artist}
+                  helperText={errors.artist}
+                  margin="normal"
+                />
+
+                <TextField
+                  required
+                  fullWidth
+                  name="description"
+                  label="Description"
+                  multiline
+                  rows={4}
+                  value={formData.description}
+                  onChange={handleChange}
+                  error={!!errors.description}
+                  helperText={errors.description}
+                  margin="normal"
+                />
+              </Grid>
+
+              {/* Image upload */}
+              <Grid item xs={12} md={4}>
+                <Card sx={{ mb: 2 }}>
+                  <CardMedia
+                    component="img"
+                    height="200"
+                    image={imagePreview || '/placeholder-image.png'}
+                    alt="Aperçu de l'œuvre"
+                    sx={{ objectFit: 'contain', bgcolor: 'grey.100' }}
+                  />
+                </Card>
+
+                <Button
+                  variant="outlined"
+                  component="label"
+                  fullWidth
+                  startIcon={<CloudUpload />}
+                  disabled={isSubmitting}
+                >
+                  Télécharger une image
+                  <input
+                    type="file"
+                    hidden
+                    accept="image/*"
+                    onChange={handleImageUpload}
+                  />
+                </Button>
+
+                {imagePreview && (
+                  <Button
+                    color="error"
+                    startIcon={<Delete />}
+                    onClick={() => {
+                      setImagePreview(null);
+                      setFormData(prev => ({ ...prev, imageUrl: '' }));
+                    }}
+                    fullWidth
+                    sx={{ mt: 1 }}
+                  >
+                    Supprimer l'image
+                  </Button>
+                )}
+              </Grid>
+
+              {/* Détails supplémentaires */}
+              <Grid item xs={12} md={6}>
+                <TextField
+                  required
+                  fullWidth
+                  name="price"
+                  label="Prix (€)"
+                  type="number"
+                  value={formData.price}
+                  onChange={handleChange}
+                  error={!!errors.price}
+                  helperText={errors.price}
+                  margin="normal"
+                  InputProps={{
+                    inputProps: { min: 0 }
+                  }}
+                />
+
+                <Grid item xs={12} md={6}>
+                  <Box sx={{ display: 'flex', gap: 2 }}>
+                    <TextField
+                      fullWidth
+                      name="width"
+                      label="Largeur"
+                      type="number"
+                      value={formData.width}
+                      onChange={handleChange}
+                      margin="normal"
+                      InputProps={{
+                        endAdornment: <Typography color="text.secondary">cm</Typography>,
+                        inputProps: { min: 0 }
+                      }}
+                    />
+                    <TextField
+                      fullWidth
+                      name="height"
+                      label="Hauteur"
+                      type="number"
+                      value={formData.height}
+                      onChange={handleChange}
+                      margin="normal"
+                      InputProps={{
+                        endAdornment: <Typography color="text.secondary">cm</Typography>,
+                        inputProps: { min: 0 }
+                      }}
+                    />
+                  </Box>
+                  {/* Option : Ajout d'un texte d'aide */}
+                  <Typography variant="caption" color="text.secondary">
+                    Dimensions en centimètres
+                  </Typography>
+                </Grid>
+              </Grid>
+
+              <Grid item xs={12} md={6}>
+                <TextField
+                  fullWidth
+                  name="medium"
+                  label="Technique/Support"
+                  placeholder="ex: Huile sur toile"
+                  value={formData.medium}
+                  onChange={handleChange}
+                  margin="normal"
+                />
+
+                <TextField
+                  fullWidth
+                  name="year"
+                  label="Année de création"
+                  type="number"
+                  value={formData.year}
+                  onChange={handleChange}
+                  margin="normal"
+                  InputProps={{
+                    inputProps: {
+                      min: 1800,
+                      max: new Date().getFullYear()
+                    }
+                  }}
+                />
+              </Grid>
+            </Grid>
+
+            <Box sx={{ mt: 3, display: 'flex', justifyContent: 'flex-end' }}>
+              <Button
+                type="submit"
+                variant="contained"
+                size="large"
+                disabled={isSubmitting}
+              >
+                {isSubmitting ? 'Enregistrement...' : 'Ajouter l\'œuvre'}
+              </Button>
+            </Box>
+          </Box>
+        </Paper>
       </Box>
+
+      <Snackbar
+        open={snackbar.open}
+        autoHideDuration={6000}
+        onClose={() => setSnackbar(prev => ({ ...prev, open: false }))}
+      >
+        <Alert
+          onClose={() => setSnackbar(prev => ({ ...prev, open: false }))}
+          severity={snackbar.severity}
+          sx={{ width: '100%' }}
+        >
+          {snackbar.message}
+        </Alert>
+      </Snackbar>
     </Container>
   );
 }
